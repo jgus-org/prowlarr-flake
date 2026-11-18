@@ -1,0 +1,10 @@
+# Upstream and distributed artifacts
+
+| Artifact                                                                                             | Licence & Notifications                                                                                                                                                                                                                                                 |
+| ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| This flake: `flake.nix` and these documents                                                          | [MIT](LICENSE.md)                                                                                                                                                                                                                                                       |
+| `patches/prowlarr-sync-fail-downloads.patch`, a derivative of the Prowlarr source it patches         | [GPL-3.0-only](https://github.com/Prowlarr/Prowlarr/blob/v2.6.5.5623/LICENSE) (`gpl3Only`, as nixpkgs records it for the package). The MIT grant above does not reach it: a diff carries upstream source as its context lines, so it travels under Prowlarr's own terms |
+| [Prowlarr](https://github.com/Prowlarr/Prowlarr), whose source nixpkgs builds and this flake patches | [GPL-3.0-only](https://github.com/Prowlarr/Prowlarr/blob/v2.6.5.5623/LICENSE); this flake rebuilds nixpkgs' package rather than vendoring it, and Prowlarr's own terms cover its bundled dependencies                                                                   |
+
+Serving the patched Prowlarr from a binary cache or another host conveys it, and the corresponding
+source that act owes is nixpkgs' Prowlarr source plus this flake's patch. That act is the consumer's.

@@ -1,0 +1,171 @@
+diff --git a/src/NzbDrone.Core/Applications/Radarr/Radarr.cs b/src/NzbDrone.Core/Applications/Radarr/Radarr.cs
+index 6266f4f..7e028c7 100644
+--- a/src/NzbDrone.Core/Applications/Radarr/Radarr.cs
++++ b/src/NzbDrone.Core/Applications/Radarr/Radarr.cs
+@@ -231,6 +231,12 @@ private RadarrIndexer BuildRadarrIndexer(IndexerDefinition indexer, IndexerCapab
+             var schemas = _schemaCache.Get(cacheKey, () => _radarrV3Proxy.GetIndexerSchema(Settings), TimeSpan.FromDays(7));
+             var syncFields = new List<string> { "baseUrl", "apiPath", "apiKey", "categories", "minimumSeeders", "seedCriteria.seedRatio", "seedCriteria.seedTime", "rejectBlocklistedTorrentHashesWhileGrabbing" };
+ 
++            // The arr owns this field, so Prowlarr writes it only for an indexer that asks it to.
++            if (((IIndexerSettings)indexer.Settings).BaseSettings.FailDownloads?.Any() == true)
++            {
++                syncFields.Add("failDownloads");
++            }
++
+             if (id == 0)
+             {
+                 // Ensuring backward compatibility with older versions on first sync
+@@ -275,6 +281,11 @@ private RadarrIndexer BuildRadarrIndexer(IndexerDefinition indexer, IndexerCapab
+                 }
+             }
+ 
++            if (radarrIndexer.Fields.Any(x => x.Name == "failDownloads"))
++            {
++                radarrIndexer.Fields.FirstOrDefault(x => x.Name == "failDownloads").Value = JArray.FromObject(((IIndexerSettings)indexer.Settings).BaseSettings.FailDownloads.ToArray());
++            }
++
+             return radarrIndexer;
+         }
+     }
+diff --git a/src/NzbDrone.Core/Applications/Radarr/RadarrIndexer.cs b/src/NzbDrone.Core/Applications/Radarr/RadarrIndexer.cs
+index 3ae820f..b251136 100644
+--- a/src/NzbDrone.Core/Applications/Radarr/RadarrIndexer.cs
++++ b/src/NzbDrone.Core/Applications/Radarr/RadarrIndexer.cs
+@@ -55,6 +55,11 @@ public bool Equals(RadarrIndexer other)
+             var otherRejectBlocklistedTorrentHashesWhileGrabbing = other.Fields.FirstOrDefault(x => x.Name == "rejectBlocklistedTorrentHashesWhileGrabbing")?.Value == null ? null : (bool?)Convert.ToBoolean(other.Fields.FirstOrDefault(x => x.Name == "rejectBlocklistedTorrentHashesWhileGrabbing").Value);
+             var rejectBlocklistedTorrentHashesWhileGrabbingCompare = rejectBlocklistedTorrentHashesWhileGrabbing == otherRejectBlocklistedTorrentHashesWhileGrabbing;
+ 
++            // Absent means the arr owns it: the value round-trips through the sync merge, so
++            // comparing it would schedule a PUT on every sync.
++            var failDownloadsCompare = !ManagesFailDownloads(this) ||
++                FailDownloadsOf(this).SequenceEqual(FailDownloadsOf(other));
++
+             return other.EnableRss == EnableRss &&
+                 other.EnableAutomaticSearch == EnableAutomaticSearch &&
+                 other.EnableInteractiveSearch == EnableInteractiveSearch &&
+@@ -62,7 +67,19 @@ public bool Equals(RadarrIndexer other)
+                 other.Implementation == Implementation &&
+                 other.Priority == Priority &&
+                 other.Id == Id &&
+-                apiKeyCompare && apiPathCompare && baseUrl && cats && minimumSeedersCompare && seedRatioCompare && seedTimeCompare && rejectBlocklistedTorrentHashesWhileGrabbingCompare;
++                apiKeyCompare && apiPathCompare && baseUrl && cats && minimumSeedersCompare && seedRatioCompare && seedTimeCompare && rejectBlocklistedTorrentHashesWhileGrabbingCompare && failDownloadsCompare;
++        }
++
++        private static bool ManagesFailDownloads(RadarrIndexer indexer)
++        {
++            return indexer.Fields.Any(x => x.Name == "failDownloads");
++        }
++
++        private static IEnumerable<int> FailDownloadsOf(RadarrIndexer indexer)
++        {
++            return indexer.Fields.FirstOrDefault(x => x.Name == "failDownloads")?.Value is JArray failDownloads
++                ? failDownloads.Values<int>().OrderBy(v => v)
++                : Enumerable.Empty<int>();
+         }
+     }
+ }
+diff --git a/src/NzbDrone.Core/Applications/Sonarr/Sonarr.cs b/src/NzbDrone.Core/Applications/Sonarr/Sonarr.cs
+index bf58b85..ad5904a 100644
+--- a/src/NzbDrone.Core/Applications/Sonarr/Sonarr.cs
++++ b/src/NzbDrone.Core/Applications/Sonarr/Sonarr.cs
+@@ -239,6 +239,12 @@ private SonarrIndexer BuildSonarrIndexer(IndexerDefinition indexer, IndexerCapab
+             var schemas = _schemaCache.Get(cacheKey, () => _sonarrV3Proxy.GetIndexerSchema(Settings), TimeSpan.FromDays(7));
+             var syncFields = new List<string> { "baseUrl", "apiPath", "apiKey", "categories", "animeCategories", "animeStandardFormatSearch", "minimumSeeders", "seedCriteria.seedRatio", "seedCriteria.seedTime", "seedCriteria.seasonPackSeedTime", "rejectBlocklistedTorrentHashesWhileGrabbing" };
+ 
++            // The arr owns this field, so Prowlarr writes it only for an indexer that asks it to.
++            if (((IIndexerSettings)indexer.Settings).BaseSettings.FailDownloads?.Any() == true)
++            {
++                syncFields.Add("failDownloads");
++            }
++
+             if (id == 0)
+             {
+                 // Ensuring backward compatibility with older versions on first sync
+@@ -290,6 +296,11 @@ private SonarrIndexer BuildSonarrIndexer(IndexerDefinition indexer, IndexerCapab
+                 }
+             }
+ 
++            if (sonarrIndexer.Fields.Any(x => x.Name == "failDownloads"))
++            {
++                sonarrIndexer.Fields.FirstOrDefault(x => x.Name == "failDownloads").Value = JArray.FromObject(((IIndexerSettings)indexer.Settings).BaseSettings.FailDownloads.ToArray());
++            }
++
+             return sonarrIndexer;
+         }
+     }
+diff --git a/src/NzbDrone.Core/Applications/Sonarr/SonarrIndexer.cs b/src/NzbDrone.Core/Applications/Sonarr/SonarrIndexer.cs
+index 698c7ed..1900300 100644
+--- a/src/NzbDrone.Core/Applications/Sonarr/SonarrIndexer.cs
++++ b/src/NzbDrone.Core/Applications/Sonarr/SonarrIndexer.cs
+@@ -65,6 +65,11 @@ public bool Equals(SonarrIndexer other)
+             var otherRejectBlocklistedTorrentHashesWhileGrabbing = other.Fields.FirstOrDefault(x => x.Name == "rejectBlocklistedTorrentHashesWhileGrabbing")?.Value == null ? null : (bool?)Convert.ToBoolean(other.Fields.FirstOrDefault(x => x.Name == "rejectBlocklistedTorrentHashesWhileGrabbing").Value);
+             var rejectBlocklistedTorrentHashesWhileGrabbingCompare = rejectBlocklistedTorrentHashesWhileGrabbing == otherRejectBlocklistedTorrentHashesWhileGrabbing;
+ 
++            // Absent means the arr owns it: the value round-trips through the sync merge, so
++            // comparing it would schedule a PUT on every sync.
++            var failDownloadsCompare = !ManagesFailDownloads(this) ||
++                FailDownloadsOf(this).SequenceEqual(FailDownloadsOf(other));
++
+             return other.EnableRss == EnableRss &&
+                 other.EnableAutomaticSearch == EnableAutomaticSearch &&
+                 other.EnableInteractiveSearch == EnableInteractiveSearch &&
+@@ -72,7 +77,19 @@ public bool Equals(SonarrIndexer other)
+                 other.Implementation == Implementation &&
+                 other.Priority == Priority &&
+                 other.Id == Id &&
+-                apiKeyCompare && apiPathCompare && baseUrl && cats && animeCats && animeStandardFormatSearchCompare && minimumSeedersCompare && seedRatioCompare && seedTimeCompare && seasonSeedTimeCompare && rejectBlocklistedTorrentHashesWhileGrabbingCompare;
++                apiKeyCompare && apiPathCompare && baseUrl && cats && animeCats && animeStandardFormatSearchCompare && minimumSeedersCompare && seedRatioCompare && seedTimeCompare && seasonSeedTimeCompare && rejectBlocklistedTorrentHashesWhileGrabbingCompare && failDownloadsCompare;
++        }
++
++        private static bool ManagesFailDownloads(SonarrIndexer indexer)
++        {
++            return indexer.Fields.Any(x => x.Name == "failDownloads");
++        }
++
++        private static IEnumerable<int> FailDownloadsOf(SonarrIndexer indexer)
++        {
++            return indexer.Fields.FirstOrDefault(x => x.Name == "failDownloads")?.Value is JArray failDownloads
++                ? failDownloads.Values<int>().OrderBy(v => v)
++                : Enumerable.Empty<int>();
+         }
+     }
+ }
+diff --git a/src/NzbDrone.Core/Indexers/FailDownloadReason.cs b/src/NzbDrone.Core/Indexers/FailDownloadReason.cs
+new file mode 100644
+index 0000000..a8733c7
+--- /dev/null
++++ b/src/NzbDrone.Core/Indexers/FailDownloadReason.cs
+@@ -0,0 +1,14 @@
++using NzbDrone.Core.Annotations;
++
++namespace NzbDrone.Core.Indexers
++{
++    // Ordinals must match the arr's own FailDownloads enum, the labels are Prowlarr's.
++    public enum FailDownloadReason
++    {
++        [FieldOption(Label = "Executables")]
++        Executables = 0,
++
++        [FieldOption(Label = "Potentially Dangerous")]
++        PotentiallyDangerous = 1,
++    }
++}
+diff --git a/src/NzbDrone.Core/Indexers/IndexerBaseSettings.cs b/src/NzbDrone.Core/Indexers/IndexerBaseSettings.cs
+index 5bada9b..b0ba068 100644
+--- a/src/NzbDrone.Core/Indexers/IndexerBaseSettings.cs
++++ b/src/NzbDrone.Core/Indexers/IndexerBaseSettings.cs
+@@ -1,3 +1,4 @@
++using System.Collections.Generic;
+ using FluentValidation;
+ using NzbDrone.Core.Annotations;
+ 
+@@ -29,6 +30,9 @@ public class IndexerBaseSettings
+ 
+         [FieldDefinition(3, Type = FieldType.Select, Label = "IndexerSettingsLimitsUnit", SelectOptions = typeof(IndexerLimitsUnit), HelpText = "IndexerSettingsLimitsUnitHelpText", Advanced = true)]
+         public int LimitsUnit { get; set; } = (int)IndexerLimitsUnit.Day;
++
++        [FieldDefinition(4, Type = FieldType.Select, SelectOptions = typeof(FailDownloadReason), Label = "Fail Downloads", HelpText = "Synced indexers fail, blocklist, and search again for releases containing these file types. Left unset, each indexer keeps the value set in the arr.")]
++        public IEnumerable<int> FailDownloads { get; set; } = new List<int>();
+     }
+ 
+     public enum IndexerLimitsUnit
